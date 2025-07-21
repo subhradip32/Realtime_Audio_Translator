@@ -1,63 +1,95 @@
-import gradio as gr
-import os 
-from dotenv import load_dotenv
-import assemblyai as aai
-from translate import Translator
-from elevenlabs.client import ElevenLabs
-from elevenlabs import play
-import uuid
+# import gradio as gr
+# import os 
+# from dotenv import load_dotenv
+# import assemblyai as aai
+# from translate import Translator
+# from elevenlabs.client import ElevenLabs
+# from elevenlabs import play
+# import uuid
 
-# Load API Key
-load_dotenv()
-aai.settings.api_key = os.getenv("API_KEY")
+# # Load API Key
+# load_dotenv()
+# aai.settings.api_key = os.getenv("API_KEY")
 
-def voice_translation(audio_path): 
-    try:
-        transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(speech_model=aai.SpeechModel.slam_1)
-        transcript = transcriber.transcribe(audio_path, config=config)
+# def voice_translation(audio_path): 
+#     try:
+#         transcriber = aai.Transcriber()
+#         config = aai.TranscriptionConfig(speech_model=aai.SpeechModel.slam_1)
+#         transcript = transcriber.transcribe(audio_path, config=config)
 
-        if transcript.error:
-            return f"Transcription Error: {transcript.error}"
-        else:
-            text = transcript.text
+#         if transcript.error:
+#             return f"Transcription Error: {transcript.error}"
+#         else:
+#             text = transcript.text
 
-        text = translate_text(text)
-        audio = text_to_speech(text)
-        return text, audio
+#         text = translate_text(text)
+#         audio = text_to_speech(text)
+#         return text, audio
 
-    except Exception as e:
-        return f"Error: {str(e)}"
+#     except Exception as e:
+#         return f"Error: {str(e)}"
 
-def translate_text(text):
+# def translate_text(text):
     
-    translator_es = Translator(to_lang="es")
-    text_es = translator_es.translate(text)
-    return text_es
+#     translator_es = Translator(to_lang="es")
+#     text_es = translator_es.translate(text)
+#     return text_es
 
-def text_to_speech(text):
-    elevenlabs = ElevenLabs(
-        api_key=os.getenv("ELEVENLABS_API_KEY"),
-        ) 
-    audio = elevenlabs.text_to_speech.convert(
-        text=text,
-        voice_id="JBFqnCBsd6RMkjVDRZzb",
-        model_id="eleven_multilingual_v2",
-        output_format="mp3_44100_128",
-    )
-    file_path = f"{uuid.uuid4()}.mp3"
-    with open(file_path, "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
+# def text_to_speech(text):
+#     elevenlabs = ElevenLabs(
+#         api_key=os.getenv("ELEVENLABS_API_KEY"),
+#         ) 
+#     audio = elevenlabs.text_to_speech.convert(
+#         text=text,
+#         voice_id="JBFqnCBsd6RMkjVDRZzb",
+#         model_id="eleven_multilingual_v2",
+#         output_format="mp3_44100_128",
+#     )
+#     file_path = f"{uuid.uuid4()}.mp3"
+#     with open(file_path, "wb") as f:
+#         for chunk in audio:
+#             f.write(chunk)
 
-    return file_path
+#     return file_path
 
 
-demo = gr.Interface(
-    fn=voice_translation,
-    inputs=gr.Audio(sources=["microphone", "upload"], type="filepath", label="Speak or Upload Audio"),
-    outputs=[gr.Textbox(label="Transcribed Text"), gr.Audio(label="Translated Audio")],
-    title="Voice to Voice Translator"
-)
+# demo = gr.Interface(
+#     fn=voice_translation,
+#     inputs=gr.Audio(sources=["microphone", "upload"], type="filepath", label="Speak or Upload Audio"),
+#     outputs=[gr.Textbox(label="Transcribed Text"), gr.Audio(label="Translated Audio")],
+#     title="Voice to Voice Translator"
+# )
 
-demo.launch()
+# demo.launch()
+
+
+
+
+
+
+
+import sys
+from ollama import chat
+from ollama import ChatResponse
+
+default_model = "llama3.2"
+translate_to_language = "es"
+stream_spoken_data = True 
+
+if len(sys.argv) > 1:
+    translate_to_language = sys.argv[1]
+if len(sys.argv) > 2:
+    stream_spoken_data = sys.argv[2]
+if len(sys.argv) > 3:
+    default_model = sys.argv[3]
+
+print(translate_to_language,stream_spoken_data, default_model)
+
+response: ChatResponse = chat(model=default_model, messages=[
+  {
+    'role': 'user',
+    'content': 'Make this into a fluent sentence and also dont add any other lines: hii hii there how are how are you doing?',
+  },
+])
+# print(response['message']['content'])
+print(response.message.content)

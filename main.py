@@ -2,7 +2,7 @@ import logging
 import threading
 import time
 from typing import Type
-# import sys
+import sys
 import assemblyai as aai
 from assemblyai.streaming.v3 import (
     BeginEvent,
@@ -15,16 +15,28 @@ from assemblyai.streaming.v3 import (
     TerminationEvent,
     TurnEvent,
 )
-import elevenlabs
-from elevenlabs.client import ElevenLabs
-from elevenlabs import play
+from translate import Translator
 import os
 import dotenv
 dotenv.load_dotenv()
 api_key = os.getenv("API_KEY")
 
+# global variables
 transcript_history = []
 full_transcript = ""
+# global variables from args
+default_model = "llama3.2"
+translate_to_language = "es"
+stream_spoken_data = True 
+
+# Check if command line arguments are provided
+if len(sys.argv) > 1:
+    translate_to_language = sys.argv[1]
+if len(sys.argv) > 2:
+    stream_spoken_data = sys.argv[2]
+if len(sys.argv) > 3:
+    default_model = sys.argv[3]
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +44,10 @@ logger = logging.getLogger(__name__)
 # Global shared time variable
 last_audio_time = time.time()
 timeout_seconds = 4
+translator= Translator(to_lang=translate_to_language)
 
+
+# Basic envent hanlers 
 def on_begin(self: Type[StreamingClient], event: BeginEvent):
     print(f"Session started: {event.id}")
 
@@ -41,6 +56,7 @@ def on_turn(self: Type[StreamingClient], event: TurnEvent):
     last_audio_time = time.time() 
 
     if event.transcript:
+        # translated_text = translator.translate(event.transcript)
         transcript_history.append(event.transcript)
 
     print(f"{event.transcript} ({event.end_of_turn})")
@@ -56,7 +72,7 @@ def on_terminated(self: Type[StreamingClient], event: TerminationEvent):
 
     full_transcript = " ".join(transcript_history)
     print(f"Full transcript---\n{full_transcript}")
-    text_to_sppech(full_transcript)
+    print(f"Translated text: {translator.translate(full_transcript)}")
     os._exit(0) 
 
 def on_error(self: Type[StreamingClient], error: StreamingError):
@@ -70,6 +86,9 @@ def monitor_inactivity(client: StreamingClient):
             client.disconnect(terminate=True)
             break
 
+
+
+# Main function to handle all the functionality
 def main():
     global last_audio_time
     last_audio_time = time.time()
@@ -102,18 +121,5 @@ def main():
     finally:
         client.disconnect(terminate=True)
 
-def text_to_sppech(text):
-    elevenlabs = ElevenLabs(
-        api_key=os.getenv("ELEVENLABS_API_KEY"),
-    )
-    audio = elevenlabs.text_to_speech.convert(
-        text=text,
-        voice_id="bIHbv24MWmeRgasZH58o",
-        model_id="eleven_multilingual_v2",
-        output_format="mp3_44100_128",
-    )
 
-    play(audio)
-
-# text_to_sppech()
 main()
