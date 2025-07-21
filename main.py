@@ -1,63 +1,119 @@
-import gradio as gr
-import os 
-from dotenv import load_dotenv
+import logging
+import threading
+import time
+from typing import Type
+# import sys
 import assemblyai as aai
-from translate import Translator
+from assemblyai.streaming.v3 import (
+    BeginEvent,
+    StreamingClient,
+    StreamingClientOptions,
+    StreamingError,
+    StreamingEvents,
+    StreamingParameters,
+    StreamingSessionParameters,
+    TerminationEvent,
+    TurnEvent,
+)
+import elevenlabs
 from elevenlabs.client import ElevenLabs
 from elevenlabs import play
-import uuid
+import os
+import dotenv
+dotenv.load_dotenv()
+api_key = os.getenv("API_KEY")
 
-# Load API Key
-load_dotenv()
-aai.settings.api_key = os.getenv("API_KEY")
+transcript_history = []
+full_transcript = ""
 
-def voice_translation(audio_path): 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global shared time variable
+last_audio_time = time.time()
+timeout_seconds = 4
+
+def on_begin(self: Type[StreamingClient], event: BeginEvent):
+    print(f"Session started: {event.id}")
+
+def on_turn(self: Type[StreamingClient], event: TurnEvent):
+    global last_audio_time
+    last_audio_time = time.time() 
+
+    if event.transcript:
+        transcript_history.append(event.transcript)
+
+    print(f"{event.transcript} ({event.end_of_turn})")
+
+    if event.end_of_turn and not event.turn_is_formatted:
+        params = StreamingSessionParameters(
+            format_turns=True,
+        )
+        self.set_params(params)
+
+def on_terminated(self: Type[StreamingClient], event: TerminationEvent):
+    print(f"Session terminated: {event.audio_duration_seconds} seconds of audio processed")
+
+    full_transcript = " ".join(transcript_history)
+    print(f"Full transcript---\n{full_transcript}")
+    text_to_sppech(full_transcript)
+    os._exit(0) 
+
+def on_error(self: Type[StreamingClient], error: StreamingError):
+    print(f"Error occurred: {error}")
+
+def monitor_inactivity(client: StreamingClient):
+    while True:
+        time.sleep(1)
+        if time.time() - last_audio_time > timeout_seconds:
+            print("No audio received for 4 seconds. Terminating session...")
+            client.disconnect(terminate=True)
+            break
+
+def main():
+    global last_audio_time
+    last_audio_time = time.time()
+
+    client = StreamingClient(
+        StreamingClientOptions(
+            api_key=api_key
+        )
+    )
+
+    client.on(StreamingEvents.Begin, on_begin)
+    client.on(StreamingEvents.Turn, on_turn)
+    client.on(StreamingEvents.Termination, on_terminated)
+    client.on(StreamingEvents.Error, on_error)
+
+    client.connect(
+        StreamingParameters(
+            sample_rate=16000,
+            format_turns=True,
+        )
+    )
+
+    # Start inactivity monitor thread
+    threading.Thread(target=monitor_inactivity, args=(client,), daemon=True).start()
+
     try:
-        transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(speech_model=aai.SpeechModel.slam_1)
-        transcript = transcriber.transcribe(audio_path, config=config)
+        client.stream(
+            aai.extras.MicrophoneStream(sample_rate=16000)
+        )
+    finally:
+        client.disconnect(terminate=True)
 
-        if transcript.error:
-            return f"Transcription Error: {transcript.error}"
-        else:
-            text = transcript.text
-
-        text = translate_text(text)
-        audio = text_to_speech(text)
-        return text, audio
-
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-def translate_text(text):
-    
-    translator_es = Translator(to_lang="es")
-    text_es = translator_es.translate(text)
-    return text_es
-
-def text_to_speech(text):
+def text_to_sppech(text):
     elevenlabs = ElevenLabs(
         api_key=os.getenv("ELEVENLABS_API_KEY"),
-        ) 
+    )
     audio = elevenlabs.text_to_speech.convert(
         text=text,
-        voice_id="JBFqnCBsd6RMkjVDRZzb",
+        voice_id="bIHbv24MWmeRgasZH58o",
         model_id="eleven_multilingual_v2",
         output_format="mp3_44100_128",
     )
-    file_path = f"{uuid.uuid4()}.mp3"
-    with open(file_path, "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
 
-    return file_path
+    play(audio)
 
-
-demo = gr.Interface(
-    fn=voice_translation,
-    inputs=gr.Audio(sources=["microphone", "upload"], type="filepath", label="Speak or Upload Audio"),
-    outputs=[gr.Textbox(label="Transcribed Text"), gr.Audio(label="Translated Audio")],
-    title="Voice to Voice Translator"
-)
-
-demo.launch()
+# text_to_sppech()
+main()
